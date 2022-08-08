@@ -7,29 +7,101 @@ using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using System.Data.SqlClient;
+using IoTWeek3_v2.models;
+using System.Collections.Generic;
 
 namespace IoTWeek3_v2
 {
     public static class Function1
     {
-        [FunctionName("Function1")]
-        public static async Task<IActionResult> Run(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequest req,
+        [FunctionName("AddRegistration")]
+        public static async Task<IActionResult> AddRegistration(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/registration")] HttpRequest req,
             ILogger log)
         {
-            log.LogInformation("C# HTTP trigger function processed a request.");
+            try
+            {
+                var json = await new StreamReader(req.Body).ReadToEndAsync();
+                var registration = JsonConvert.DeserializeObject<Registration>(json);
 
-            string name = req.Query["name"];
+                string guid = Guid.NewGuid().ToString();
+                registration.RegistrationId = guid;
 
-            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            dynamic data = JsonConvert.DeserializeObject(requestBody);
-            name = name ?? data?.name;
+                //connectie maken via connectiestring
+                using (SqlConnection connection = new SqlConnection(Environment.GetEnvironmentVariable("SQLConnectionString")))
+                {
+                    await connection.OpenAsync();
 
-            string responseMessage = string.IsNullOrEmpty(name)
-                ? "This HTTP triggered function executed successfully. Pass a name in the query string or in the request body for a personalized response."
-                : $"Hello, {name}. This HTTP triggered function executed successfully.";
+                    //sql commando opstellen
+                    using (SqlCommand command = new SqlCommand())
+                    {
+                        command.Connection = connection;
+                        //sql statement opstellen
+                        command.CommandText = "INSERT INTO Registrations VALUES (@RegistrationId, @FirstName, @LastName, @EMail, @Zipcode, @Age, @IsFirstTimer)";
+                        command.Parameters.AddWithValue("@RegistrationId", registration.RegistrationId);
+                        command.Parameters.AddWithValue("@FirstName", registration.Firstname);
+                        command.Parameters.AddWithValue("@LastName", registration.Lastname);
+                        command.Parameters.AddWithValue("@EMail", registration.Email);
+                        command.Parameters.AddWithValue("@Zipcode", registration.Zipcode);
+                        command.Parameters.AddWithValue("@Age", registration.Age);
+                        command.Parameters.AddWithValue("@IsFirstTimer", registration.IsFirstTimer);
+                        await command.ExecuteNonQueryAsync();
+                    }
+                }
+                return new OkObjectResult(registration);
+            }
+            catch (Exception e)
+            {
+                log.LogError(e.Message);
+                return new StatusCodeResult(500);
+            }
+        }
 
-            return new OkObjectResult(responseMessage);
+        [FunctionName("GetRegistrations")]
+        public static async Task<IActionResult> GetRegistrations(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/registrations")] HttpRequest req,
+            ILogger log)
+        {
+            try
+            {
+                List<Registration> listRegistrations = new List<Registration>();
+                //connectie maken via connectiestring
+                using (SqlConnection connection = new SqlConnection(Environment.GetEnvironmentVariable("SQLConnectionString")))
+                {
+                    await connection.OpenAsync();
+                    //sql commando opstellen
+                    using (SqlCommand command = new SqlCommand())
+                    {
+                        command.Connection = connection;
+                        //sql statement opstellen
+                        command.CommandText = "SELECT * FROM Registrations";
+                        //data lezen en opslaan
+                        SqlDataReader reader = await command.ExecuteReaderAsync();
+                        while (await reader.ReadAsync())
+                        {
+                            listRegistrations.Add(new Registration()
+                            {
+                                RegistrationId = reader["RegistrationId"].ToString(),
+                                Firstname = reader["FirstName"].ToString(),
+                                Lastname = reader["LastName"].ToString(),
+                                Email = reader["EMail"].ToString(),
+                                Zipcode = reader["Zipcode"].ToString(),
+                                Age = int.Parse(reader["Age"].ToString()),
+                                IsFirstTimer = bool.Parse(reader["IsFirstTimer"].ToString())
+                            });
+                        }
+                    }
+                }
+                //lijst terugsturen met juiste statuscode
+                return new OkObjectResult(listRegistrations);
+            }
+            catch (Exception e)
+            {
+                log.LogError(e.Message);
+                return new StatusCodeResult(500);
+            }
+
         }
     }
 }

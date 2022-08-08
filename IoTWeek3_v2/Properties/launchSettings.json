@@ -1,9 +1,7 @@
 {
   "profiles": {
     "IoTWeek3_v2": {
-      "commandName": "Project",
-      "commandLineArgs": "--port 7088",
-      "launchBrowser": false
+      "commandName": "Project"
     }
   }
 }
