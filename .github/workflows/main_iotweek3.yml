@@ -28,7 +28,7 @@ jobs:
       - name: 'Resolve Project Dependencies Using Dotnet'
         shell: bash
         run: |
-          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
+          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/IoTWeek3_v2'
           dotnet build --configuration Release --output ./output
           popd
 
@@ -38,5 +38,5 @@ jobs:
         with:
           app-name: 'IoTWeek3'
           slot-name: 'Production'
-          package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
+          package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/IoTWeek3_v2/output'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_8B12CC8EC0924BA0A2B0DF7230BF89BA }}
