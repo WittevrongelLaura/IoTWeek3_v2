@@ -10,11 +10,14 @@ using Newtonsoft.Json;
 using System.Data.SqlClient;
 using IoTWeek3_v2.models;
 using System.Collections.Generic;
+using Microsoft.Azure.Cosmos.Table;
 
 namespace IoTWeek3_v2
 {
     public static class Function1
     {
+        //SQL SERVER
+
         [FunctionName("AddRegistration")]
         public static async Task<IActionResult> AddRegistration(
             [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/registration")] HttpRequest req,
@@ -102,6 +105,90 @@ namespace IoTWeek3_v2
                 return new StatusCodeResult(500);
             }
 
+        }
+
+        //STORAGE
+
+        [FunctionName("AddRegistrationStorage")]
+        public static async Task<IActionResult> AddRegistrationStorage(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/registration")] HttpRequest req,
+            ILogger log)
+        {
+            try
+            {
+                var json = await new StreamReader(req.Body).ReadToEndAsync();
+                Registration registration = JsonConvert.DeserializeObject<Registration>(json);
+
+                string registrationId = Guid.NewGuid().ToString();
+
+                //object aanmaken
+                RegistrationEntity registrationEntity = new RegistrationEntity(registration.Zipcode, registrationId)
+                {
+                    FirstName = registration.Firstname,
+                    LastName = registration.Lastname,
+                    EMail = registration.Email,
+                    Zipcode = registration.Zipcode,
+                    Age = registration.Age,
+                    IsFirstTimer = registration.IsFirstTimer
+                };
+
+                //connectie maken met tabel
+                CloudStorageAccount cloudStorageAccount = CloudStorageAccount.Parse(Environment.GetEnvironmentVariable("StorageConnectionString"));
+                CloudTableClient cloudTableClient = cloudStorageAccount.CreateCloudTableClient();
+                CloudTable cloudTable = cloudTableClient.GetTableReference("registrations");
+                await cloudTable.CreateIfNotExistsAsync();
+
+                //insert
+                TableOperation insert = TableOperation.Insert(registrationEntity);
+                await cloudTable.ExecuteAsync(insert);
+
+                return new OkObjectResult(registration);
+            }
+            catch (Exception e)
+            {
+                log.LogError(e.Message);
+                return new StatusCodeResult(500);
+            }
+        }
+
+        [FunctionName("GetRegistrationsStorage")]
+        public static async Task<IActionResult> GetRegistrationsStorage(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/registrations/{zipcode}")] HttpRequest req, string zipcode,
+            ILogger log)
+        {
+            try
+            {
+                //connectie maken met tabel
+                CloudStorageAccount cloudStorageAccount = CloudStorageAccount.Parse(Environment.GetEnvironmentVariable("StorageConnectionString"));
+                CloudTableClient cloudTableClient = cloudStorageAccount.CreateCloudTableClient();
+                CloudTable cloudTable = cloudTableClient.GetTableReference("registrations");
+
+                TableQuery<RegistrationEntity> rangeQuery = new TableQuery<RegistrationEntity>()
+                    .Where(TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, zipcode));
+
+                //lege ctor maken in RegistrationEntity!!
+                var queryResult = await cloudTable.ExecuteQuerySegmentedAsync<RegistrationEntity>(rangeQuery, null);
+                List<Registration> listRegistrations = new List<Registration>();
+
+                foreach (var reg in queryResult.Results)
+                {
+                    listRegistrations.Add(new Registration()
+                    {
+                        Firstname = reg.FirstName,
+                        Lastname = reg.LastName,
+                        Email = reg.EMail,
+                        Zipcode = reg.Zipcode,
+                        Age = reg.Age,
+                        IsFirstTimer = reg.IsFirstTimer
+                    });
+                }
+                return new OkObjectResult(listRegistrations);
+            }
+            catch (Exception e)
+            {
+                log.LogError(e.Message);
+                return new StatusCodeResult(500);
+            }
         }
     }
 }
